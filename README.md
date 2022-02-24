@@ -42,3 +42,7 @@ To use the launch file for autonomous robot, use the following command in a term
 roslaunch turtlebot_vacuum turtlebot_autonomous.launch
 ```
 
+## Videos
+
+The videos of the simulation are present in the 'videos' folder.
+
