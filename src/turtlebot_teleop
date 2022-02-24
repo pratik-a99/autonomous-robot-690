@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+
+import rospy
+from geometry_msgs.msg import Twist
+import sys, select, os
+import tty, termios
+
+max_vel = 0.22
+max_ang = 2.84
+
+vel_step = 0.01
+turn_step = 0.1
+
+msg = """
+Controls
+
+w : increase velocity 
+
+x : decrease velocity 
+
+a : turn left
+
+d : turn right
+
+space key, s : force stop
+
+CTRL-C to quit
+"""
+
+e = """
+Communications Failed
+"""
+
+def getKey():
+    tty.setraw(sys.stdin.fileno())
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+    if rlist:
+        key = sys.stdin.read(1)
+    else:
+        key = ''
+
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+    return key
+
+def print_vel(target_linear_vel, target_angular_vel):
+    return "\tlinear velocity %s\t|| angular velocity %s " % (target_linear_vel,target_angular_vel)
+
+def makeSimpleProfile(output, input, slop):
+    if input > output:
+        output = min( input, output + slop )
+    elif input < output:
+        output = max( input, output - slop )
+    else:
+        output = input
+
+    return output
+
+def constrain(input, low, high):
+    if input < low:
+      input = low
+    elif input > high:
+      input = high
+    else:
+      input = input
+
+    return input
+
+if __name__=="__main__":
+    if os.name != 'nt':
+        settings = termios.tcgetattr(sys.stdin)
+
+    rospy.init_node('turtlebot3_teleop')
+    pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+
+    turtlebot3_model = rospy.get_param("model", "burger")
+
+    status = 0
+    target_linear_vel   = 0.0
+    target_angular_vel  = 0.0
+    control_linear_vel  = 0.0
+    control_angular_vel = 0.0
+
+    try:
+        print(msg)
+        while(1):
+            key = getKey()
+            if key == 'w' :
+                target_linear_vel = constrain((target_linear_vel + vel_step), -max_vel, max_vel)
+                status = status + 1
+                print(print_vel(target_linear_vel,target_angular_vel))
+            elif key == 'x' :
+                target_linear_vel = constrain((target_linear_vel - vel_step), -max_vel, max_vel)
+                status = status + 1
+                print(print_vel(target_linear_vel,target_angular_vel))
+            elif key == 'a' :
+                target_angular_vel = constrain((target_angular_vel + turn_step), -max_ang, max_ang)
+                status = status + 1
+                print(print_vel(target_linear_vel,target_angular_vel))
+            elif key == 'd' :
+                target_angular_vel = constrain((target_angular_vel - turn_step), -max_ang, max_ang)
+                status = status + 1
+                print(print_vel(target_linear_vel,target_angular_vel))
+            elif key == ' ' or key == 's' :
+                target_linear_vel   = 0.0
+                control_linear_vel  = 0.0
+                target_angular_vel  = 0.0
+                control_angular_vel = 0.0
+                print(print_vel(target_linear_vel, target_angular_vel))
+            else:
+                if (key == '\x03'):
+                    break
+
+            if status == 20 :
+                print(msg)
+                status = 0
+
+            twist = Twist()
+
+            control_linear_vel = makeSimpleProfile(control_linear_vel, target_linear_vel, (vel_step/2.0))
+            twist.linear.x = control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+
+            control_angular_vel = makeSimpleProfile(control_angular_vel, target_angular_vel, (turn_step/2.0))
+            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = control_angular_vel
+
+            pub.publish(twist)
+
+    except:
+        print(e)
+
+    finally:
+        twist = Twist()
+        twist.linear.x = 0.0; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = 0.0
+        pub.publish(twist)
+
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
